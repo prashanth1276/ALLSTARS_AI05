@@ -17,3 +17,4 @@ sqlalchemy
 python-jose
 python-dotenv
 pymongo
+huggingface_hub

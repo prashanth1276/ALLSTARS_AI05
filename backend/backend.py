@@ -1,20 +1,12 @@
-from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi import FastAPI, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi import Request
 
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, Session
 
-from passlib.context import CryptContext
-from jose import jwt
-
-from datetime import datetime, timedelta
+from datetime import datetime
 import os
-import json
 import requests
 import uvicorn
 from pathlib import Path
@@ -25,12 +17,11 @@ import tf_keras as keras
 import numpy as np
 from transformers import BertTokenizer, TFAutoModelForSequenceClassification
 from tensorflow.keras.preprocessing import image
-from PIL import Image  
 import speech_recognition as sr
 from dotenv import load_dotenv
 
 load_dotenv()
-os.getenv("PORT", 10000)
+os.getenv("PORT", 8000)
 
 # Load model paths from environment variables with fallback defaults
 WASTE_CLASSIFIER_PATH = os.getenv("WASTE_CLASSIFIER_PATH", "waste_classifier.keras")
@@ -208,5 +199,5 @@ async def classify_voice(audio: UploadFile = File(...), lat: str = Form(...), lo
     
 # Run Server
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 10000))
+    port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
