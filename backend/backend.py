@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, F
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi import Request
 
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
@@ -29,6 +30,7 @@ import speech_recognition as sr
 from dotenv import load_dotenv
 
 load_dotenv()
+os.getenv("PORT", 10000)
 
 # Load model paths from environment variables with fallback defaults
 WASTE_CLASSIFIER_PATH = os.getenv("WASTE_CLASSIFIER_PATH", "waste_classifier.keras")
@@ -149,7 +151,7 @@ async def speech_to_text(audio_file: UploadFile):
 
 # API Endpoint for Image Classification
 @app.post("/classify")
-async def classify_waste(file: UploadFile = File(...), lat: str = Form(...), lon: str = Form(...)):
+async def classify_waste(request: Request, file: UploadFile = File(...), lat: str = Form(...), lon: str = Form(...)):
     city = await get_city_from_coordinates(lat, lon)
     timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
     filename = f"{timestamp}_{file.filename}"
@@ -162,13 +164,18 @@ async def classify_waste(file: UploadFile = File(...), lat: str = Form(...), lon
         contents = img_file.read()
 
     category, confidence, guidance = await predict_waste(contents)
+    host_url = str(request.base_url)
+    image_url = f"{host_url}results/{filename}"
+
+
+    category, confidence, guidance = await predict_waste(contents)
 
     return {
         "predicted_category": category,
         "confidence": round(confidence, 2),
         "guidance": guidance,
         "detected_city": city,
-        "image_url": f"http://127.0.0.1:8000/results/{filename}",
+        "image_url": image_url,
     }
 
 # API Endpoint for Text-Based Classification
@@ -201,4 +208,5 @@ async def classify_voice(audio: UploadFile = File(...), lat: str = Form(...), lo
     
 # Run Server
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
