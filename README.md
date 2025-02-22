@@ -63,7 +63,6 @@ EcoSnap is a **web-based AI-powered waste classification tool** that enables use
 ### **AI Models Used:**  
 🧠 **BERT** - Natural Language Processing (for text-based classification & speech-to-text processing)  
 📷 **MobileNetV2** - Image Recognition (for waste classification)  
-🎙️ **Whisper (or any ASR model)** - Speech-to-Text for user voice input  
 
 ---
 
