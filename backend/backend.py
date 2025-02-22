@@ -1,35 +1,41 @@
+from fastapi import FastAPI, HTTPException, Depends, status, File, UploadFile, Form
+from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from fastapi import FastAPI, HTTPException, Depends
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker, Session
+
 from passlib.context import CryptContext
 from jose import jwt
-import datetime
-from fastapi import FastAPI, Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from pydantic import BaseModel
-from passlib.context import CryptContext
-import jwt
+
 from datetime import datetime, timedelta
 import os
-from pathlib import Path
-from datetime import datetime
-import tensorflow as tf
-import numpy as np
-import torch
-from transformers import BertTokenizer, BertForSequenceClassification
-from tensorflow.keras.preprocessing import image
-from fastapi import FastAPI, File, UploadFile, Form
-from fastapi.middleware.cors import CORSMiddleware
-import requests
 import json
+import requests
 import uvicorn
-from PIL import Image  
+from pathlib import Path
 from io import BytesIO
+
+import tensorflow as tf
+import tf_keras as keras
+import numpy as np
+from transformers import BertTokenizer, TFAutoModelForSequenceClassification
+from tensorflow.keras.preprocessing import image
+from PIL import Image  
 import speech_recognition as sr
-from fastapi.staticfiles import StaticFiles
+from dotenv import load_dotenv
+
+load_dotenv()
+
+# Load model paths from environment variables with fallback defaults
+WASTE_CLASSIFIER_PATH = os.getenv("WASTE_CLASSIFIER_PATH", "waste_classifier.keras")
+BERT_MODEL_PATH = os.getenv("BERT_MODEL_PATH", "bert_waste_classifier")
+
+class TextRequest(BaseModel):
+    text: str
 
 # Initialize FastAPI App
 app = FastAPI()
@@ -51,7 +57,7 @@ app.add_middleware(
 )
 
 # Load AI Image Classification Model
-image_model = tf.keras.models.load_model("waste_classifier.keras")
+image_model = tf.keras.models.load_model(WASTE_CLASSIFIER_PATH)
 CLASS_NAMES = ["Recyclable", "Non-Recyclable", "Biodegradable"]
 
 DISPOSAL_GUIDELINES = {
@@ -61,9 +67,9 @@ DISPOSAL_GUIDELINES = {
 }
 
 # Load BERT Text Classification Model
-BERT_MODEL_PATH = "bert_waste_classifier"
 bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
-bert_model = BertForSequenceClassification.from_pretrained(BERT_MODEL_PATH)
+# Load BERT Model (TensorFlow version)
+bert_model = TFAutoModelForSequenceClassification.from_pretrained(BERT_MODEL_PATH)
 
 LABEL_MAP = {0: "Recyclable", 1: "Non-Recyclable", 2: "Biodegradable"}
 
@@ -84,7 +90,25 @@ async def predict_waste(contents: bytes):
         return category, confidence, disposal_guidance
     except Exception as e:
         return "Error", 0.0, str(e)
+'''
+async def get_city_from_coordinates(lat: str, lon: str):
+    url = f"https://geocoding-api.open-meteo.com/v1/reverse?latitude={lat}&longitude={lon}&format=json"
+    
+    try:
+        response = requests.get(url, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        if "results" in data and len(data["results"]) > 0:
+            return data["results"][0].get("name", "Unknown Location")
+    
+    except requests.exceptions.RequestException as e:
+        print(f"Error fetching location data: {e}")
+        return "Unknown Location"
 
+    return "Unknown Location"
+
+'''
 async def get_city_from_coordinates(lat: str, lon: str):
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}"
     
@@ -104,15 +128,17 @@ async def get_city_from_coordinates(lat: str, lon: str):
 
     return "Unknown Location"
 
-# Function to classify waste from text
-async def classify_text_waste(text: str):
-    inputs = bert_tokenizer(text, return_tensors="pt", padding=True, truncation=True, max_length=128)
 
-    with torch.no_grad():
-        logits = bert_model(**inputs).logits
-        prediction = torch.argmax(logits, dim=1).item()
+# Function to classify waste from text using TensorFlow
+async def classify_text_waste(text: str):
+    inputs = bert_tokenizer(text, return_tensors="tf", padding=True, truncation=True, max_length=128)
+
+    outputs = bert_model(**inputs)
+    logits = outputs.logits.numpy()  # Convert TensorFlow tensor to NumPy
+    prediction = np.argmax(logits, axis=1)[0]  # Get the predicted label index
 
     return LABEL_MAP[prediction]
+
 
 # Function to convert voice to text
 async def speech_to_text(audio_file: UploadFile):
@@ -146,13 +172,13 @@ async def classify_waste(file: UploadFile = File(...), lat: str = Form(...), lon
     }
 
 # API Endpoint for Text-Based Classification
-@app.get("/classify_text")
-async def classify_text(text: str):
-    category = await classify_text_waste(text)
-    return {"input_text": text, "predicted_category": category}
+@app.post("/classify_text")
+async def classify_text(request: TextRequest):
+    category = await classify_text_waste(request.text)
+    return {"input_text": request.text, "predicted_category": category}
 
 # API Endpoint for Voice-Based Classification
-@app.get("/classify_voice")
+@app.post("/classify_voice")
 async def classify_voice(audio: UploadFile = File(...), lat: str = Form(...), lon: str = Form(...)):
     try:
         # Convert voice to text
@@ -172,97 +198,6 @@ async def classify_voice(audio: UploadFile = File(...), lat: str = Form(...), lo
         }
     except Exception as e:
         return {"error": str(e)}
-    
-'''
-# Signin and Signup
-
-# Secret key for JWT
-SECRET_KEY = "your_secret_key"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
-
-app = FastAPI()
-
-# Database setup
-DATABASE_URL = "sqlite:///./users.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# Password hashing
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
-
-
-# User Model
-class User(Base):
-    _tablename_ = "users"
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, nullable=False)
-    email = Column(String, unique=True, index=True, nullable=False)
-    password = Column(String, nullable=False)
-
-Base.metadata.create_all(bind=engine)
-
-# Pydantic Models
-class UserCreate(BaseModel):
-    name: str
-    email: str
-    password: str
-
-class UserLogin(BaseModel):
-    email: str
-    password: str
-
-# Dependency to get DB session
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-def hash_password(password: str):
-    return pwd_context.hash(password)
-
-
-def verify_password(plain_password, hashed_password):
-    return pwd_context.verify(plain_password, hashed_password)
-
-
-def create_access_token(data: dict, expires_delta: timedelta = None):
-    to_encode = data.copy()
-    expire = datetime.utcnow() + (expires_delta if expires_delta else timedelta(minutes=15))
-    to_encode.update({"exp": expire})
-    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-
-
-# Signup Route
-@app.post("/signup/")
-def signup(user: UserCreate, db: Session = Depends(get_db)):
-    existing_user = db.query(User).filter(User.email == user.email).first()
-    if existing_user:
-        raise HTTPException(status_code=400, detail="Email already registered")
-    
-    hashed_password = pwd_context.hash(user.password)
-    new_user = User(name=user.name, email=user.email, password=hashed_password)
-    db.add(new_user)
-    db.commit()
-    return {"message": "Signup successful"}
-
-# Login Route
-@app.post("/login/")
-def login(user: UserLogin, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.email == user.email).first()
-    if not db_user or not pwd_context.verify(user.password, db_user.password):
-        raise HTTPException(status_code=400, detail="Invalid credentials")
-    
-    token_data = {"sub": user.email, "exp": datetime.datetime.utcnow() + datetime.timedelta(hours=1)}
-    access_token = jwt.encode(token_data, SECRET_KEY, algorithm=ALGORITHM)
-    
-    return {"access_token": access_token}
-'''
     
 # Run Server
 if __name__ == "__main__":

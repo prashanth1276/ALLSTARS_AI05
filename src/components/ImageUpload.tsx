@@ -1,173 +1,73 @@
 import React, { useCallback, useState, useRef } from 'react';
-import { Upload, Camera, Loader, Mic } from 'lucide-react';
+import { Upload, Camera, Loader, X, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface ImageUploadProps {
-  onImageUpload: (image: string, apiResult: any) => void;
+  onImageUpload: (image: string, file: File, lat: string, lon: string) => Promise<void>;
   isLoading: boolean;
 }
 
 const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUpload, isLoading }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
-  const [speechInput, setSpeechInput] = useState('');
-  const [isSpeechActive, setIsSpeechActive] = useState(false);
-  const recognitionRef = useRef<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const uploadToServer = async (file: File, lat: string, lon: string) => {
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('lat', lat);
-    formData.append('lon', lon);
-
-    try {
-      const response = await fetch('http://localhost:8000/classify', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
-      }
-
-      return await response.json();
-    } catch (error) {
-      console.error('Error uploading image:', error);
-      throw error;
-    }
+  const showError = (message: string) => {
+    setError(message);
+    setTimeout(() => setError(null), 5000);
   };
 
-  const uploadVoiceToServer = async (audioBlob: Blob, lat: string, lon: string) => {
-    const formData = new FormData();
-    formData.append('audio', audioBlob);
-    formData.append('lat', lat);
-    formData.append('lon', lon);
-
-    try {
-      const response = await fetch('http://localhost:8000/classify_voice', {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!response.ok) {
-        throw new Error('Network response was not ok');
+  const getLocation = (): Promise<{ lat: string; lon: string }> => {
+    return new Promise((resolve, reject) => {
+      if (!navigator.geolocation) {
+        reject(new Error('Geolocation is not supported by your browser'));
+        return;
       }
 
-      return await response.json();
-    } catch (error) {
-      console.error('Error uploading voice:', error);
-      throw error;
-    }
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          resolve({
+            lat: position.coords.latitude.toString(),
+            lon: position.coords.longitude.toString()
+          });
+        },
+        (error) => {
+          reject(new Error('Could not retrieve location'));
+        }
+      );
+    });
   };
 
-  const processFile = (file: File) => {
-    if (!navigator.geolocation) {
-      alert('Geolocation is not supported by your browser.');
-      return;
-    }
-  
-    setIsUploading(true);
-    
-    navigator.geolocation.getCurrentPosition(
-      async (position) => {
-        const lat = position.coords.latitude.toString();
-        const lon = position.coords.longitude.toString();
-  
+  const processFile = async (file: File) => {
+    try {
+      if (!file.type.startsWith('image/')) {
+        showError('Please upload an image file');
+        return;
+      }
+
+      if (file.size > 5 * 1024 * 1024) {
+        showError('File size must be less than 5MB');
+        return;
+      }
+
+      const location = await getLocation();
+      const reader = new FileReader();
+
+      reader.onload = async () => {
         try {
-          const reader = new FileReader();
-          reader.onload = async () => {
-            const apiResult = await uploadToServer(file, lat, lon);
-            onImageUpload(reader.result as string, apiResult);
-            setIsUploading(false);
-          };
-          reader.readAsDataURL(file);
+          await onImageUpload(reader.result as string, file, location.lat, location.lon);
         } catch (error) {
-          console.error('Error processing file:', error);
-          setIsUploading(false);
-          alert('Error processing image. Please try again.');
+          showError('Error processing image');
         }
-      },
-      (error) => {
-        console.error('Error getting geolocation:', error);
-        alert('Could not retrieve location.');
-        setIsUploading(false);
+      };
+
+      reader.readAsDataURL(file);
+    } catch (error) {
+      if (error instanceof Error) {
+        showError(error.message);
+      } else {
+        showError('An unexpected error occurred');
       }
-    );
-  };
-
-  const startSpeechRecognition = () => {
-    if (!('webkitSpeechRecognition' in window)) {
-      alert('Speech recognition is not supported in your browser.');
-      return;
-    }
-
-    recognitionRef.current = new (window as any).webkitSpeechRecognition();
-    const recognition = recognitionRef.current;
-    
-    recognition.continuous = true;
-    recognition.interimResults = true;
-    recognition.lang = 'en-US';
-
-    recognition.onstart = () => {
-      setIsSpeechActive(true);
-      setSpeechInput('Listening...');
-    };
-
-    recognition.onresult = async (event: any) => {
-      const transcript = Array.from(event.results)
-        .map((result: any) => result[0].transcript)
-        .join('');
-      
-      setSpeechInput(transcript);
-
-      if (event.results[event.results.length - 1].isFinal) {
-        if (!navigator.geolocation) {
-          alert('Geolocation is not supported by your browser.');
-          return;
-        }
-
-        navigator.geolocation.getCurrentPosition(
-          async (position) => {
-            const lat = position.coords.latitude.toString();
-            const lon = position.coords.longitude.toString();
-
-            try {
-              const response = await fetch(`http://localhost:8000/classify_text?text=${encodeURIComponent(transcript)}`);
-              if (!response.ok) throw new Error('Network response was not ok');
-              const result = await response.json();
-              onImageUpload('', result);
-            } catch (error) {
-              console.error('Error processing speech:', error);
-              alert('Error processing speech. Please try again.');
-            }
-          },
-          (error) => {
-            console.error('Error getting geolocation:', error);
-            alert('Could not retrieve location.');
-          }
-        );
-
-        recognition.stop();
-      }
-    };
-
-    recognition.onerror = (event: any) => {
-      console.error('Speech recognition error:', event.error);
-      setIsSpeechActive(false);
-      setSpeechInput('');
-    };
-
-    recognition.onend = () => {
-      setIsSpeechActive(false);
-    };
-
-    recognition.start();
-  };
-
-  const stopSpeechRecognition = () => {
-    if (recognitionRef.current) {
-      recognitionRef.current.stop();
-      setIsSpeechActive(false);
-      setSpeechInput('');
     }
   };
 
@@ -176,11 +76,11 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUpload, isLoading }) =
       e.preventDefault();
       setIsDragging(false);
       const file = e.dataTransfer.files[0];
-      if (file && file.type.startsWith('image/')) {
+      if (file) {
         processFile(file);
       }
     },
-    []
+    [processFile]
   );
 
   const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -190,79 +90,116 @@ const ImageUpload: React.FC<ImageUploadProps> = ({ onImageUpload, isLoading }) =
     }
   };
 
+  const handleCameraClick = () => {
+    if (fileInputRef.current) {
+      fileInputRef.current.click();
+    }
+  };
+
   return (
-    <div
-      className={`border-2 border-dashed rounded-xl transition-all duration-300 ${
-        isDragging
-          ? 'border-green-500 bg-green-50'
-          : 'border-gray-300 hover:border-green-400'
-      }`}
-      onDragOver={(e) => {
-        e.preventDefault();
-        setIsDragging(true);
-      }}
-      onDragLeave={() => setIsDragging(false)}
-      onDrop={handleDrop}
-    >
-      <div className="flex flex-col items-center justify-center p-8 space-y-6">
-        <div className="relative">
-          <div className={`flex space-x-4 ${isLoading ? 'opacity-50' : ''}`}>
-            <div className="p-4 bg-green-100 rounded-full">
-              <Upload className="h-8 w-8 text-green-600" />
+    <div className="space-y-4">
+      {/* Error Toast */}
+      <AnimatePresence>
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="bg-red-500 text-white p-4 rounded-lg flex items-center justify-between"
+          >
+            <div className="flex items-center space-x-2">
+              <AlertCircle className="h-5 w-5" />
+              <span>{error}</span>
             </div>
-            <div className="p-4 bg-blue-100 rounded-full">
-              <Camera className="h-8 w-8 text-blue-600" />
-            </div>
-            <div 
-              className={`p-4 ${isSpeechActive ? 'bg-red-100' : 'bg-yellow-100'} rounded-full cursor-pointer`}
-              onClick={() => isSpeechActive ? stopSpeechRecognition() : startSpeechRecognition()}
+            <button
+              onClick={() => setError(null)}
+              className="hover:opacity-75 transition-opacity"
             >
-              <Mic className={`h-8 w-8 ${isSpeechActive ? 'text-red-600' : 'text-yellow-600'}`} />
-            </div>
+              <X className="h-4 w-4" />
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Upload Area */}
+      <div
+        className={`relative border-2 border-dashed rounded-xl transition-all duration-300 ${
+          isDragging
+            ? 'border-teal-500 bg-teal-50/10'
+            : 'border-gray-300/50 hover:border-teal-400/50'
+        }`}
+        onDragOver={(e) => {
+          e.preventDefault();
+          setIsDragging(true);
+        }}
+        onDragLeave={() => setIsDragging(false)}
+        onDrop={handleDrop}
+      >
+        <div className="flex flex-col items-center justify-center p-8 space-y-6">
+          <div className="flex space-x-4">
+            <motion.div 
+              className="p-4 bg-teal-500/10 rounded-full cursor-pointer"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleCameraClick}
+            >
+              <Upload className="h-8 w-8 text-teal-300" />
+            </motion.div>
+            <motion.div 
+              className="p-4 bg-blue-500/10 rounded-full cursor-pointer"
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleCameraClick}
+            >
+              <Camera className="h-8 w-8 text-blue-300" />
+            </motion.div>
           </div>
-          {isUploading && (
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Loader className="h-8 w-8 text-green-200 animate-spin" />
-            </div>
-          )}
-        </div>
 
-        <div className="text-center">
-          <p className="text-lg text-gray-600 mb-2">
-            {isDragging
-              ? 'Drop your image here'
-              : 'Drag and drop an image here, or click to select'}
-          </p>
-          <p className="text-sm text-gray-200">
-            Supports: JPG, PNG, WEBP (max 5MB)
-          </p>
-        </div>
-
-        {speechInput && (
-          <div className="w-full max-w-md bg-white p-4 rounded-lg shadow-sm">
-            <p className="text-sm text-gray-600">
-              {speechInput}
+          <div className="text-center">
+            <p className="text-lg text-gray-300 mb-2">
+              {isDragging
+                ? 'Drop your image here'
+                : 'Drag and drop an image here, or click to select'}
+            </p>
+            <p className="text-sm text-gray-400">
+              Supports: JPG, PNG, WEBP (max 5MB)
             </p>
           </div>
-        )}
 
-        <input
-          type="file"
-          accept="image/*"
-          className="hidden"
-          id="file-upload"
-          onChange={handleFileInput}
-          disabled={isUploading}
-        />
-        <label
-          htmlFor="file-upload"
-          className={`px-6 py-3 bg-gradient-to-r from-green-600 to-blue-600 text-white rounded-lg cursor-pointer hover:opacity-90 transition-opacity flex items-center space-x-2 ${
-            isUploading ? 'opacity-50 cursor-not-allowed' : ''
-          }`}
-        >
-          <Upload className="h-5 w-5" />
-          <span>Upload Image</span>
-        </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={handleFileInput}
+            disabled={isLoading}
+          />
+
+          <motion.button
+            onClick={handleCameraClick}
+            className={`px-6 py-3 bg-gradient-to-r from-teal-500 to-blue-500 text-white rounded-lg 
+              flex items-center space-x-2 shadow-lg ${isLoading ? 'opacity-50 cursor-not-allowed' : 'hover:opacity-90'}`}
+            whileHover={!isLoading ? { scale: 1.02 } : {}}
+            whileTap={!isLoading ? { scale: 0.98 } : {}}
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader className="h-5 w-5 animate-spin" />
+            ) : (
+              <Upload className="h-5 w-5" />
+            )}
+            <span>{isLoading ? 'Processing...' : 'Upload Image'}</span>
+          </motion.button>
+        </div>
+
+        {/* Loading Overlay */}
+        {isLoading && (
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm rounded-xl flex items-center justify-center">
+            <div className="bg-white/10 p-4 rounded-full">
+              <Loader className="h-8 w-8 text-white animate-spin" />
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

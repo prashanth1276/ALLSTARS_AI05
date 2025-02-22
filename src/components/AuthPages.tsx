@@ -5,6 +5,7 @@ interface AuthProps {
   onLogin: (email: string, password: string) => void;
   onSignup: (name: string, email: string, password: string) => void;
   onClose: () => void;
+  isLoading: boolean;  // Add this line
 }
 
 const AuthPages: React.FC<AuthProps> = ({ onLogin, onSignup, onClose }) => {

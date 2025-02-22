@@ -7,4 +7,6 @@ __pycache__/
 # Ignore results directory
 results/
 
+bert_waste_classifier/
+
 .env
