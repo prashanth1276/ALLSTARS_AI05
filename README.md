@@ -68,8 +68,8 @@ EcoSnap is a **web-based AI-powered waste classification tool** that enables use
 
 ## 📢 Contributors  
 👨‍💻 **Prashanth S** | [LinkedIn Profile](https://www.linkedin.com/in/prashanths27) | [GitHub Profile](https://github.com/prashanth1276)  
-👨‍💻 **Pranav S Karpur** | [LinkedIn Profile](#) | [GitHub Profile](#)  
-👨‍💻 **Preetham Bhat** | [LinkedIn Profile](https://www.linkedin.com/in/preetham-bhat-p1104) | [GitHub Profile](#)  
+👨‍💻 **Pranav S Karpur** | [LinkedIn Profile](https://www.linkedin.com/in/pranav-karpur-718a35341) | [GitHub Profile](https://github.com/Pranav-S-100)  
+👨‍💻 **Preetham Bhat** | [LinkedIn Profile](https://www.linkedin.com/in/preetham-bhat-p1104) | [GitHub Profile](https://github.com/Preetham-2004)  
 
 ---
 
