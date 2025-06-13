@@ -25,7 +25,20 @@ os.getenv("PORT", 8000)
 
 # Load model paths from environment variables with fallback defaults
 WASTE_CLASSIFIER_PATH = os.getenv("WASTE_CLASSIFIER_PATH", "waste_classifier.keras")
-BERT_MODEL_PATH = os.getenv("BERT_MODEL_PATH", "bert_waste_classifier")
+# Load BERT Text Classification Model
+BERT_MODEL_PATH = os.getenv("BERT_MODEL_PATH", "your-username/bert_waste_classifier")
+try:
+    if os.path.exists(BERT_MODEL_PATH):
+        # Load from local path
+        bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH)
+        bert_model = TFAutoModelForSequenceClassification.from_pretrained(BERT_MODEL_PATH)
+    else:
+        # Load from Hugging Face
+        bert_tokenizer = BertTokenizer.from_pretrained(BERT_MODEL_PATH, from_tf=True)
+        bert_model = TFAutoModelForSequenceClassification.from_pretrained(BERT_MODEL_PATH, from_tf=True)
+except Exception as e:
+    print(f"Error loading BERT model: {e}")
+    raise
 
 class TextRequest(BaseModel):
     text: str
@@ -83,25 +96,7 @@ async def predict_waste(contents: bytes):
         return category, confidence, disposal_guidance
     except Exception as e:
         return "Error", 0.0, str(e)
-'''
-async def get_city_from_coordinates(lat: str, lon: str):
-    url = f"https://geocoding-api.open-meteo.com/v1/reverse?latitude={lat}&longitude={lon}&format=json"
-    
-    try:
-        response = requests.get(url, timeout=5)
-        response.raise_for_status()
-        data = response.json()
-        
-        if "results" in data and len(data["results"]) > 0:
-            return data["results"][0].get("name", "Unknown Location")
-    
-    except requests.exceptions.RequestException as e:
-        print(f"Error fetching location data: {e}")
-        return "Unknown Location"
 
-    return "Unknown Location"
-
-'''
 async def get_city_from_coordinates(lat: str, lon: str):
     url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat}&lon={lon}"
     

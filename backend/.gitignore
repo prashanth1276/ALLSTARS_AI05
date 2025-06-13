@@ -10,3 +10,5 @@ results/
 bert_waste_classifier/
 
 .env
+
+EcoSnap
